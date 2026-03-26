@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
+import sqlalchemy
 import plotly.express as px
 
 # ==========================================
@@ -11,19 +11,23 @@ st.title("📊 AuraTrend Pro - Command Dashboard")
 st.markdown("ศูนย์บัญชาการติดตามผลการเทรดของระบบ AI อัตโนมัติ")
 
 # ==========================================
-# 🗄️ 2. ดึงข้อมูลจากฐานข้อมูล SQLite
+# 🗄️ 2. ดึงข้อมูลจากฐานข้อมูล Cloud (PostgreSQL)
 # ==========================================
 def load_data():
-    # เชื่อมต่อกับไฟล์ฐานข้อมูลที่เราสร้างจาก server.py
-    conn = sqlite3.connect('aura_database.db')
-    # ดึงข้อมูลจากตาราง reports
-    df = pd.read_sql_query("SELECT * FROM reports", conn)
-    conn.close()
+    # 🌟 สำคัญ: เอา URL ของ Railway มาวางแทนตรงนี้นะครับ! 🌟
+    # (อย่าลืมแก้คำว่า postgres:// เป็น postgresql://)
+    DB_URL = "postgresql://postgres:รหัสผ่านของคุณ@ที่อยู่.railway.app:5432/railway"
     
-    # แปลงคอลัมน์เวลาให้เป็นรูปแบบ DateTime
-    if not df.empty:
-        df['closed_at'] = pd.to_datetime(df['closed_at'])
-    return df
+    engine = sqlalchemy.create_engine(DB_URL)
+    
+    try:
+        df = pd.read_sql_query("SELECT * FROM reports", engine)
+        if not df.empty:
+            df['closed_at'] = pd.to_datetime(df['closed_at'])
+        return df
+    except Exception as e:
+        # ถ้าตารางยังไม่มีข้อมูล ให้ไม่ Error แต่โชว์ตารางว่างแทน
+        return pd.DataFrame()
 
 df = load_data()
 
@@ -54,7 +58,6 @@ else:
     
     with col_chart1:
         st.subheader("📈 กราฟการเติบโตของพอร์ต (Equity Curve)")
-        # สร้างคอลัมน์กำไรสะสม
         df['cumulative_profit'] = df['profit'].cumsum()
         fig_equity = px.line(df, x='closed_at', y='cumulative_profit', markers=True, 
                              labels={'closed_at': 'เวลาที่ปิดออเดอร์', 'cumulative_profit': 'กำไรสะสม ($)'})
@@ -62,7 +65,6 @@ else:
 
     with col_chart2:
         st.subheader("📊 สถิติเหตุผลการปิดออเดอร์")
-        # นับจำนวนการปิดด้วย AUTO vs MANUAL
         reason_counts = df['close_reason'].value_counts().reset_index()
         reason_counts.columns = ['close_reason', 'count']
         fig_pie = px.pie(reason_counts, values='count', names='close_reason', hole=0.4,
@@ -74,15 +76,11 @@ else:
     # --- ส่วนที่ 3: ตารางข้อมูลแบบเจาะลึก (Data Table) ---
     st.subheader("📋 ประวัติการเทรดล่าสุด (Trade Logs)")
     
-    # จัดเรียงคอลัมน์ให้ดูง่ายๆ และเอาเวลาล่าสุดขึ้นก่อน
     display_df = df[['closed_at', 'mt5_account', 'profit', 'max_dd', 'total_orders', 'close_reason']].copy()
     display_df = display_df.sort_values(by='closed_at', ascending=False)
-    
-    # เปลี่ยนชื่อคอลัมน์ให้สวยงาม
     display_df.columns = ['เวลา (UTC)', 'เลขพอร์ต', 'กำไร ($)', 'Max DD ($)', 'จำนวนไม้ที่ใช้', 'สาเหตุการปิด']
     
     st.dataframe(display_df, use_container_width=True)
     
-    # ปุ่มกด Refresh ข้อมูล
     if st.button("🔄 อัปเดตข้อมูลล่าสุด"):
         st.rerun()
