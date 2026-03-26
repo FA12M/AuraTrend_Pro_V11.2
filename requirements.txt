@@ -5,3 +5,4 @@ pydantic
 streamlit
 pandas
 plotly
+psycopg2-binary
