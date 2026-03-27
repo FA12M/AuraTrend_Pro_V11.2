@@ -12,7 +12,7 @@ import uuid
 st.set_page_config(page_title="AuraTrend Pro - Enterprise", page_icon="📈", layout="wide")
 
 # 🌟 เอา URL ของ Railway มาวางตรงนี้ (อย่าลืมเปลี่ยน postgres:// เป็น postgresql://)
-DATABASE_URL = "postgresql://postgres:gbGqTyncabrflINNTIEnQlriaKRTzeYo@postgres.railway.internal:5432/railway" 
+DATABASE_URL = "postgresql://postgres:gbGqTyncabrflINNTIEnQlriaKRTzeYo@shinkansen.proxy.rlwy.net:28443/railway" 
 engine = sqlalchemy.create_engine(DATABASE_URL)
 
 # ==========================================
