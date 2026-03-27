@@ -13,7 +13,7 @@ st.set_page_config(page_title="AuraTrend Pro - Enterprise", page_icon="📈", la
 
 # 🌟 เอา URL แบบ Public ของ Railway มาวางตรงนี้ (อย่าลืมขึ้นต้นด้วย postgresql://)
 # ตัวอย่าง: "postgresql://postgres:รหัสผ่าน@shinkansen.proxy.rlwy.net:28443/railway"
-DATABASE_URL = "ลิงก์_DATABASE_ของท่านนายพล_ใส่ตรงนี้" 
+DATABASE_URL = "postgresql://postgres:gbGqTyncabrflINNTIEnQlriaKRTzeYo@shinkansen.proxy.rlwy.net:28443/railway" 
 engine = sqlalchemy.create_engine(DATABASE_URL)
 
 # ==========================================
