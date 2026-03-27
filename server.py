@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -7,22 +7,34 @@ import uuid
 import uvicorn
 
 # ==========================================
-# ⚙️ 1. ตั้งค่าฐานข้อมูล (SQLite) และ Admin Key
+# ⚙️ 1. ตั้งค่าฐานข้อมูล (รองรับทั้ง SQLite และ PostgreSQL)
 # ==========================================
-ADMIN_SECRET_KEY = "SuperSecretAura2026" 
+# 🌟 เปลี่ยนตรงนี้เป็น URL ของ Railway (postgresql://...) หรือใช้ sqlite ทดสอบในคอม
 DATABASE_URL = "sqlite:///./aura_database.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # ==========================================
 # 🗄️ 2. ออกแบบตารางในฐานข้อมูล (Database Models)
 # ==========================================
+class DBUser(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    password = Column(String) 
+    role = Column(String, default="USER") # สิทธิ์: ADMIN หรือ USER
+
 class DBToken(Base):
     __tablename__ = "tokens"
     id = Column(Integer, primary_key=True, index=True)
     token_string = Column(String, unique=True, index=True) 
+    owner_username = Column(String)                        # 🌟 เจ้าของ Token (User)
     mt5_account = Column(String, nullable=True)            
     valid_days = Column(Integer)                           
     activated_at = Column(DateTime, nullable=True)         
@@ -33,21 +45,32 @@ class DBReport(Base):
     id = Column(Integer, primary_key=True, index=True)
     mt5_account = Column(String, index=True)
     token_string = Column(String)
+    broker_name = Column(String)      # 🌟 ชื่อโบรกเกอร์
+    symbol = Column(String)           # 🌟 คู่เงิน
+    magic_number = Column(String)     # 🌟 เลข Magic Number (แยกจอ)
     profit = Column(Float)            
     max_dd = Column(Float)            
     total_orders = Column(Integer)    
-    close_reason = Column(String, default="AUTO_CLOSE") # 🌟 เพิ่มคอลัมน์นี้แล้ว
+    close_reason = Column(String) 
     closed_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-# 🌟 สั่งสร้างตารางใหม่ (ถ้ายังไม่มี)
+# 🌟 สั่งสร้างตารางใหม่ (และสร้าง Admin ตั้งต้นให้ระบบ)
 Base.metadata.create_all(bind=engine)
+
+def init_default_admin():
+    db = SessionLocal()
+    # ถ้ายังไม่มีใครในระบบเลย ให้สร้าง Admin รหัสผ่านเริ่มต้น (เอาไปล็อกอินใน Dashboard)
+    if not db.query(DBUser).filter(DBUser.username == "admin").first():
+        admin_user = DBUser(username="admin", password="password123", role="ADMIN")
+        db.add(admin_user)
+        db.commit()
+    db.close()
+
+init_default_admin()
 
 # ==========================================
 # 📦 3. รูปแบบการรับส่งข้อมูล (Pydantic Schemas)
 # ==========================================
-class TokenCreate(BaseModel):
-    valid_days: int = 30  
-
 class BotVerify(BaseModel):
     token_string: str
     mt5_account: str
@@ -55,15 +78,18 @@ class BotVerify(BaseModel):
 class BotReport(BaseModel):
     token_string: str
     mt5_account: str
+    broker_name: str
+    symbol: str
+    magic_number: str
     profit: float
     max_dd: float
     total_orders: int
-    close_reason: str  # 🌟 รับค่าสาเหตุการปิดจาก MT5
+    close_reason: str
 
 # ==========================================
 # 🚀 4. สร้าง API Server (FastAPI)
 # ==========================================
-app = FastAPI(title="AuraTrend Pro - Command Center")
+app = FastAPI(title="AuraTrend Pro - Enterprise API")
 
 def get_db():
     db = SessionLocal()
@@ -72,29 +98,12 @@ def get_db():
     finally:
         db.close()
 
-def verify_admin(x_admin_key: str = Header(...)):
-    if x_admin_key != ADMIN_SECRET_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized: รหัส Admin ไม่ถูกต้อง!")
-
 # ------------------------------------------
-# 👑 โซนของ ADMIN (ต้องใช้ ADMIN_SECRET_KEY)
-# ------------------------------------------
-@app.post("/admin/create_token", tags=["Admin"])
-def create_token(data: TokenCreate, db: Session = Depends(get_db), admin: str = Depends(verify_admin)):
-    """[Admin] สร้าง Token ใหม่แบบสุ่ม"""
-    new_token_str = f"AURA-{str(uuid.uuid4())[:8].upper()}" 
-    new_token = DBToken(token_string=new_token_str, valid_days=data.valid_days)
-    db.add(new_token)
-    db.commit()
-    db.refresh(new_token)
-    return {"message": "สร้าง Token สำเร็จ!", "token": new_token_str, "valid_days": data.valid_days}
-
-# ------------------------------------------
-# 🤖 โซนของ USER / บอท MT5 (ไม่ต้องใช้รหัส Admin)
+# 🤖 โซนของ USER / บอท MT5
 # ------------------------------------------
 @app.post("/bot/verify", tags=["MT5 Bot"])
 def verify_bot(data: BotVerify, db: Session = Depends(get_db)):
-    """[MT5] ตรวจสอบ Token และผูกเข้ากับเลขพอร์ต (ใช้ครั้งแรก)"""
+    """[MT5] ตรวจสอบ Token, ผูกพอร์ต และส่งเวลานับถอยหลังกลับไป"""
     db_token = db.query(DBToken).filter(DBToken.token_string == data.token_string).first()
     
     if not db_token:
@@ -102,6 +111,7 @@ def verify_bot(data: BotVerify, db: Session = Depends(get_db)):
     if not db_token.is_active:
         raise HTTPException(status_code=403, detail="Token นี้ถูกระงับการใช้งาน!")
 
+    # ผูกพอร์ตครั้งแรก
     if db_token.mt5_account is None:
         db_token.mt5_account = data.mt5_account
         db_token.activated_at = datetime.datetime.utcnow()
@@ -109,34 +119,39 @@ def verify_bot(data: BotVerify, db: Session = Depends(get_db)):
     elif db_token.mt5_account != data.mt5_account:
         raise HTTPException(status_code=403, detail=f"Token นี้ถูกผูกกับพอร์ตอื่นไปแล้ว!")
 
+    # 🌟 คำนวณเวลาคงเหลือ (Hours Left) เพื่อส่งให้ EA ใช้ทำ Safety Lock
     if db_token.activated_at:
         expiry_date = db_token.activated_at + datetime.timedelta(days=db_token.valid_days)
-        if datetime.datetime.utcnow() > expiry_date:
+        hours_left = (expiry_date - datetime.datetime.utcnow()).total_seconds() / 3600.0
+        
+        if hours_left <= 0:
             raise HTTPException(status_code=403, detail="Token นี้หมดอายุแล้ว!")
+            
+        return {"status": "success", "message": "ยืนยันตัวตนผ่าน!", "hours_left": hours_left}
 
-    return {"status": "success", "message": "ยืนยันตัวตนผ่าน บอทสามารถทำงานได้!"}
+    return {"status": "success", "message": "ผูกพอร์ตสำเร็จ!", "hours_left": db_token.valid_days * 24.0}
 
 @app.post("/bot/report", tags=["MT5 Bot"])
 def report_trade(data: BotReport, db: Session = Depends(get_db)):
-    """[MT5] ส่งรายงานสรุปผลเมื่อปิดตะกร้า (Basket Close)"""
+    """[MT5] ส่งรายงานสรุปผลพร้อมข้อมูล Broker และ Symbol"""
     db_token = db.query(DBToken).filter(DBToken.token_string == data.token_string, DBToken.mt5_account == data.mt5_account).first()
     if not db_token:
-        raise HTTPException(status_code=403, detail="Token หรือ เลขพอร์ต ไม่ถูกต้อง ไม่สามารถส่งรายงานได้")
+        raise HTTPException(status_code=403, detail="Token หรือ เลขพอร์ต ไม่ถูกต้อง")
 
     new_report = DBReport(
         mt5_account=data.mt5_account,
         token_string=data.token_string,
+        broker_name=data.broker_name,     # 🌟 บันทึกชื่อโบรก
+        symbol=data.symbol,               # 🌟 บันทึกคู่เงิน
+        magic_number=data.magic_number,   # 🌟 บันทึกเลขจอ
         profit=data.profit,
         max_dd=data.max_dd,
         total_orders=data.total_orders,
-        close_reason=data.close_reason # 🌟 บันทึกสาเหตุลง Database
+        close_reason=data.close_reason
     )
     db.add(new_report)
     db.commit()
-    return {"status": "success", "message": f"บันทึกรายงาน ({data.close_reason}) สำเร็จ!"}
+    return {"status": "success", "message": "บันทึกรายงานสำเร็จ!"}
 
-# ==========================================
-# สั่ง Run Server: python server.py
-# ==========================================
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
