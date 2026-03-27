@@ -10,7 +10,7 @@ import uvicorn
 # ⚙️ 1. ตั้งค่าฐานข้อมูล (รองรับทั้ง SQLite และ PostgreSQL)
 # ==========================================
 # 🌟 เปลี่ยนตรงนี้เป็น URL ของ Railway (postgresql://...) หรือใช้ sqlite ทดสอบในคอม
-DATABASE_URL = "postgresql://postgres:gbGqTyncabrflINNTIEnQlriaKRTzeYo@postgres.railway.internal:5432/railway"
+DATABASE_URL = "postgresql://postgres:gbGqTyncabrflINNTIEnQlriaKRTzeYo@shinkansen.proxy.rlwy.net:28443/railway"
 
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
