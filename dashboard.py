@@ -11,8 +11,9 @@ import uuid
 # ==========================================
 st.set_page_config(page_title="AuraTrend Pro - Enterprise", page_icon="📈", layout="wide")
 
-# 🌟 เอา URL ของ Railway มาวางตรงนี้ (อย่าลืมเปลี่ยน postgres:// เป็น postgresql://)
-DATABASE_URL = "postgresql://postgres:gbGqTyncabrflINNTIEnQlriaKRTzeYo@shinkansen.proxy.rlwy.net:28443/railway" 
+# 🌟 เอา URL แบบ Public ของ Railway มาวางตรงนี้ (อย่าลืมขึ้นต้นด้วย postgresql://)
+# ตัวอย่าง: "postgresql://postgres:รหัสผ่าน@shinkansen.proxy.rlwy.net:28443/railway"
+DATABASE_URL = "ลิงก์_DATABASE_ของท่านนายพล_ใส่ตรงนี้" 
 engine = sqlalchemy.create_engine(DATABASE_URL)
 
 # ==========================================
@@ -105,8 +106,9 @@ if st.session_state.role == "ADMIN":
             if st.form_submit_button("เสก Token ✨"):
                 new_token_str = f"AURA-{str(uuid.uuid4())[:8].upper()}"
                 with engine.begin() as conn:
-                    conn.execute(text("INSERT INTO tokens (token_string, owner_username, valid_days, is_active) VALUES (:t, :u, :v, 1)"), 
-                                 {"t": new_token_str, "u": user_select, "v": valid_days})
+                    # 🌟 แก้ไขจุดนี้: เปลี่ยนจากเลข 1 เป็นตัวแปร boolean เพื่อให้เข้ากับ PostgreSQL
+                    conn.execute(text("INSERT INTO tokens (token_string, owner_username, valid_days, is_active) VALUES (:t, :u, :v, :act)"), 
+                                 {"t": new_token_str, "u": user_select, "v": valid_days, "act": True})
                 st.success(f"สร้าง Token สำเร็จ! ส่งรหัสนี้ให้ลูกค้า: {new_token_str}")
                 st.rerun()
                 
